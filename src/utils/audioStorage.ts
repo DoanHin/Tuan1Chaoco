@@ -19,6 +19,19 @@ export interface StoredAudioItem {
   meta: StoredAudioMeta;
 }
 
+export const DEFAULT_INTRO_META: StoredAudioMeta = {
+  name: 'AZero_Adam_Recorded.mp3',
+  size: 2723049,
+  type: 'audio/mpeg',
+  updatedAt: 1788602514684,
+  duration: 170,
+};
+
+export const DEFAULT_INTRO_AUDIO: StoredAudioItem = {
+  url: '/azero_intro.mp3',
+  meta: DEFAULT_INTRO_META,
+};
+
 class AudioStorageManager {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private currentAudioElement: HTMLAudioElement | null = null;
@@ -26,6 +39,19 @@ class AudioStorageManager {
   private isPlayingCustom: boolean = false;
   private cachedItem: StoredAudioItem | null = null;
   private onStatusChangeListeners: Set<(isPlaying: boolean) => void> = new Set();
+
+  constructor() {
+    // Default cached item is the bundled /azero_intro.mp3 so any device has it immediately
+    this.cachedItem = { ...DEFAULT_INTRO_AUDIO };
+    if (typeof window !== 'undefined') {
+      this.preloadAudio('/azero_intro.mp3');
+    }
+  }
+
+  // Returns immediate audio item without any async await gap (essential for mobile safari click gesture)
+  public getImmediateAudio(): StoredAudioItem {
+    return this.cachedItem || DEFAULT_INTRO_AUDIO;
+  }
 
   private getDB(): Promise<IDBDatabase> {
     if (this.dbPromise) return this.dbPromise;
@@ -51,15 +77,18 @@ class AudioStorageManager {
     return this.dbPromise;
   }
 
-  // Preload audio into memory so it starts without network delay when user clicks play
+  // Preload audio into memory so it starts without network delay when user taps play
   private preloadAudio(url: string) {
     if (typeof window === 'undefined') return;
     try {
       if (!this.preloadedAudio || this.preloadedAudio.src !== url) {
-        this.preloadedAudio = new Audio();
-        this.preloadedAudio.preload = 'auto';
-        this.preloadedAudio.src = url;
-        this.preloadedAudio.load();
+        const audio = new Audio();
+        audio.setAttribute('playsinline', 'true');
+        (audio as any).playsInline = true;
+        audio.preload = 'auto';
+        audio.src = url;
+        audio.load();
+        this.preloadedAudio = audio;
       }
     } catch {
       // ignore
@@ -70,22 +99,6 @@ class AudioStorageManager {
   public async syncToDisk(blob: Blob, meta: StoredAudioMeta): Promise<boolean> {
     if (typeof window === 'undefined') return false;
     try {
-      // Check if already on disk with same size
-      try {
-        const checkRes = await fetch('/api/audio-status');
-        if (checkRes.ok) {
-          const contentType = checkRes.headers.get('content-type') || '';
-          if (contentType.includes('application/json')) {
-            const checkData = await checkRes.json();
-            if (checkData.exists && Math.abs((checkData.meta?.size || 0) - blob.size) < 10) {
-              return true;
-            }
-          }
-        }
-      } catch {
-        // continue to save
-      }
-
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
@@ -100,16 +113,24 @@ class AudioStorageManager {
           base64,
           name: meta.name || 'azero_intro.mp3',
           type: blob.type || 'audio/mp3',
-          duration: meta.duration
-        })
+          duration: meta.duration,
+        }),
       });
 
       if (res.ok) {
-        // Invalidate cache to refetch from synced server file
-        this.cachedItem = null;
+        const data = await res.json();
+        const updatedMeta = data.meta || meta;
+        const freshUrl = data.path || `/azero_intro.mp3?v=${updatedMeta.updatedAt || Date.now()}`;
+        this.cachedItem = {
+          url: freshUrl,
+          blob,
+          meta: updatedMeta,
+        };
+        this.preloadAudio(freshUrl);
+        return true;
       }
 
-      return res.ok;
+      return false;
     } catch {
       return false;
     }
@@ -119,8 +140,11 @@ class AudioStorageManager {
   public async checkDiskAudio(): Promise<{ exists: boolean; meta?: any; url?: string }> {
     if (typeof window === 'undefined') return { exists: false };
     try {
-      // 1. Try server API
-      const res = await fetch('/api/audio-status');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch('/api/audio-status', { signal: controller.signal });
+      clearTimeout(timeoutId);
+
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
@@ -132,7 +156,6 @@ class AudioStorageManager {
       // ignore
     }
 
-    // 2. Try static json file fallback (for exported / static hosted websites)
     try {
       const basePath = (((import.meta as any).env?.BASE_URL || '/') as string).replace(/\/$/, '');
       const metaRes = await fetch(`${basePath}/azero_audio_meta.json?t=${Date.now()}`);
@@ -142,7 +165,7 @@ class AudioStorageManager {
           return {
             exists: true,
             meta,
-            url: `${basePath}/azero_intro.mp3?v=${meta.updatedAt || Date.now()}`
+            url: `${basePath}/azero_intro.mp3?v=${meta.updatedAt || Date.now()}`,
           };
         }
       }
@@ -150,7 +173,12 @@ class AudioStorageManager {
       // ignore
     }
 
-    return { exists: false };
+    // Default bundled file exists
+    return {
+      exists: true,
+      meta: DEFAULT_INTRO_META,
+      url: '/azero_intro.mp3',
+    };
   }
 
   // Save audio blob (from file upload or mic recording)
@@ -160,12 +188,12 @@ class AudioStorageManager {
       size: blob.size,
       type: blob.type || 'audio/mp3',
       updatedAt: Date.now(),
-      duration: meta.duration
+      duration: meta.duration,
     };
 
     const storedData = {
       blob,
-      meta: metaData
+      meta: metaData,
     };
 
     const objectUrl = URL.createObjectURL(blob);
@@ -173,7 +201,7 @@ class AudioStorageManager {
       this.cachedItem = {
         url: objectUrl,
         blob,
-        meta: metaData
+        meta: metaData,
       };
       this.preloadAudio(objectUrl);
     }
@@ -192,24 +220,49 @@ class AudioStorageManager {
       // safe fallback
     }
 
-    // 2. Persist to project disk /public/azero_intro.mp3 via server API
+    // 2. Persist to project disk via server API
     if (key === 'intro_audio') {
       await this.syncToDisk(blob, metaData);
     }
   }
 
-  // Get audio item (checks server/static disk first for instant streaming, then IndexedDB)
+  // Get audio item (checks server status first, then IndexedDB, fallback to bundled audio)
   public async getAudio(key: string, forceFresh = false): Promise<StoredAudioItem | null> {
     if (key === 'intro_audio' && this.cachedItem && !forceFresh) {
       return this.cachedItem;
     }
 
-    // 1. Fast server / static public check (Crucial for ANY user who visits the shared link!)
     if (key === 'intro_audio' && typeof window !== 'undefined') {
-      const basePath = (((import.meta as any).env?.BASE_URL || '/') as string).replace(/\/$/, '');
-
-      // Check 1A: azero_audio_meta.json (lightweight 150 bytes, finishes in ~10ms!)
+      // 1. Check API endpoint /api/audio-status
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const statusRes = await fetch('/api/audio-status', { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (statusRes.ok) {
+          const cType = statusRes.headers.get('content-type') || '';
+          if (cType.includes('application/json')) {
+            const data = await statusRes.json();
+            if (data.exists && data.meta) {
+              const streamUrl = data.url || `/azero_intro.mp3?v=${data.meta.updatedAt || Date.now()}`;
+              const item: StoredAudioItem = {
+                url: streamUrl,
+                meta: data.meta,
+              };
+              this.cachedItem = item;
+              this.preloadAudio(streamUrl);
+              return item;
+            }
+          }
+        }
+      } catch {
+        // continue
+      }
+
+      // 2. Check static azero_audio_meta.json
+      try {
+        const basePath = (((import.meta as any).env?.BASE_URL || '/') as string).replace(/\/$/, '');
         const metaRes = await fetch(`${basePath}/azero_audio_meta.json?t=${Date.now()}`);
         if (metaRes.ok) {
           const cType = metaRes.headers.get('content-type') || '';
@@ -219,67 +272,20 @@ class AudioStorageManager {
               const streamUrl = `${basePath}/azero_intro.mp3?v=${metaJson.updatedAt || Date.now()}`;
               const item: StoredAudioItem = {
                 url: streamUrl,
-                meta: metaJson
+                meta: metaJson,
               };
               this.cachedItem = item;
               this.preloadAudio(streamUrl);
               return item;
             }
           }
-        }
-      } catch {
-        // continue
-      }
-
-      // Check 1B: API endpoint /api/audio-status
-      try {
-        const statusRes = await fetch('/api/audio-status');
-        if (statusRes.ok) {
-          const cType = statusRes.headers.get('content-type') || '';
-          if (cType.includes('application/json')) {
-            const data = await statusRes.json();
-            if (data.exists && data.meta) {
-              const streamUrl = data.url || `${basePath}/azero_intro.mp3?v=${data.meta.updatedAt || Date.now()}`;
-              const item: StoredAudioItem = {
-                url: streamUrl,
-                meta: data.meta
-              };
-              this.cachedItem = item;
-              this.preloadAudio(streamUrl);
-              return item;
-            }
-          }
-        }
-      } catch {
-        // continue
-      }
-
-      // Check 1C: Direct HEAD request to /azero_intro.mp3
-      try {
-        const headRes = await fetch(`${basePath}/azero_intro.mp3`, { method: 'HEAD' });
-        const cType = headRes.headers.get('content-type') || '';
-        const cLen = parseInt(headRes.headers.get('content-length') || '0', 10);
-        if (headRes.ok && !cType.includes('text/html') && cLen > 1000) {
-          const streamUrl = `${basePath}/azero_intro.mp3`;
-          const item: StoredAudioItem = {
-            url: streamUrl,
-            meta: {
-              name: 'azero_intro.mp3',
-              size: cLen,
-              type: cType || 'audio/mpeg',
-              updatedAt: Date.now()
-            }
-          };
-          this.cachedItem = item;
-          this.preloadAudio(streamUrl);
-          return item;
         }
       } catch {
         // continue
       }
     }
 
-    // 2. Check IndexedDB in current browser
+    // 3. Check IndexedDB
     try {
       const db = await this.getDB();
       const fromDb = await new Promise<{ blob: Blob; meta: StoredAudioMeta } | null>((resolve, reject) => {
@@ -295,18 +301,25 @@ class AudioStorageManager {
         const item: StoredAudioItem = {
           url: objUrl,
           blob: fromDb.blob,
-          meta: fromDb.meta
+          meta: fromDb.meta,
         };
         if (key === 'intro_audio') {
           this.cachedItem = item;
           this.preloadAudio(objUrl);
-          // Auto sync to disk if not yet on disk
           this.syncToDisk(fromDb.blob, fromDb.meta).catch(() => {});
         }
         return item;
       }
     } catch {
       // ignore
+    }
+
+    // 4. Guaranteed Fallback for intro_audio: The bundled AZero audio file!
+    if (key === 'intro_audio') {
+      const fallbackItem = { ...DEFAULT_INTRO_AUDIO };
+      this.cachedItem = fallbackItem;
+      this.preloadAudio(fallbackItem.url);
+      return fallbackItem;
     }
 
     return null;
@@ -360,7 +373,7 @@ class AudioStorageManager {
       // ignore
     }
 
-    // Also delete from disk API
+    // Also delete from server API
     if (key === 'intro_audio' && typeof window !== 'undefined') {
       try {
         await fetch('/api/delete-audio', { method: 'POST' });
@@ -377,7 +390,7 @@ class AudioStorageManager {
 
   private notifyStatus(isPlaying: boolean, text?: string) {
     this.isPlayingCustom = isPlaying;
-    this.onStatusChangeListeners.forEach(cb => cb(isPlaying));
+    this.onStatusChangeListeners.forEach((cb) => cb(isPlaying));
     speechManager.notifyExternalSpeaking(isPlaying, text || (isPlaying ? 'AZero đang phát biểu' : undefined));
   }
 
@@ -406,7 +419,18 @@ class AudioStorageManager {
       isCreatedBlobUrl = true;
     }
 
-    const audio = new Audio(audioUrl);
+    // Use preloaded audio if available and matches source, or create new
+    let audio: HTMLAudioElement;
+    if (this.preloadedAudio && this.preloadedAudio.src.includes(audioUrl.split('?')[0])) {
+      audio = this.preloadedAudio;
+      audio.currentTime = 0;
+    } else {
+      audio = new Audio(audioUrl);
+    }
+
+    audio.setAttribute('playsinline', 'true');
+    (audio as any).playsInline = true;
+    audio.preload = 'auto';
     this.currentAudioElement = audio;
 
     audio.onplay = () => {

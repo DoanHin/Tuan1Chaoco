@@ -50,16 +50,16 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [isAudioUploadOpen, setIsAudioUploadOpen] = useState(false);
-  const [customAudio, setCustomAudio] = useState<StoredAudioItem | null>(null);
+  const [customAudio, setCustomAudio] = useState<StoredAudioItem | null>(() => audioStorage.getImmediateAudio());
   const [isPlayingCustomAudio, setIsPlayingCustomAudio] = useState(false);
   const [manualShowRules, setManualShowRules] = useState(false);
   const isMountedRef = useRef(true);
 
-  // Check if custom audio is uploaded in indexedDB
+  // Check if custom audio is uploaded or updated on server / indexedDB
   const refreshCustomAudio = async () => {
     try {
       const stored = await audioStorage.getAudio('intro_audio');
-      if (isMountedRef.current) {
+      if (isMountedRef.current && stored) {
         setCustomAudio(stored);
       }
     } catch {
@@ -96,21 +96,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
   const activeRuleStep = getActiveRuleStep(currentSentenceIndex);
 
   // Start reading automatically without extra clicks
-  const startIntroduction = async (fromIndex = 0) => {
+  const startIntroduction = (fromIndex = 0) => {
     setHasStartedSpeech(true);
     setCurrentSentenceIndex(fromIndex);
 
-    let audioToPlay = customAudio;
-    if (!audioToPlay) {
-      try {
-        audioToPlay = await audioStorage.getAudio('intro_audio');
-        if (audioToPlay && isMountedRef.current) {
-          setCustomAudio(audioToPlay);
-        }
-      } catch {
-        // ignore
-      }
-    }
+    const audioToPlay = customAudio || audioStorage.getImmediateAudio();
 
     // If custom audio recording is available, play custom audio with synchronized timeline!
     if (audioToPlay) {
@@ -144,10 +134,13 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
             setCurrentSentenceIndex(WELCOME_SENTENCES.length - 1);
           }
         },
-        onError: () => {
+        onError: (err) => {
+          console.warn('Playback error:', err);
           if (isMountedRef.current) setIsPlayingCustomAudio(false);
           fallbackSpeechReading(fromIndex);
         }
+      }).catch((err) => {
+        console.warn('Audio play failed:', err);
       });
       return;
     }
