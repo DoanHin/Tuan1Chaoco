@@ -1,0 +1,270 @@
+@import "tailwindcss";
+
+:root {
+  font-family: 'Be Vietnam Pro', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+.font-tech {
+  font-family: 'Chakra Petch', monospace, sans-serif;
+}
+
+.bg-sleek-radial {
+  background-color: #020617;
+  background-image: radial-gradient(circle at 50% 50%, #1e293b 0%, #020617 100%);
+}
+
+@keyframes floatBob {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-7px) rotate(-1.2deg);
+  }
+  75% {
+    transform: translateY(-4px) rotate(1.2deg);
+  }
+}
+
+@keyframes robotHoverPhysics {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg) scale(1);
+  }
+  30% {
+    transform: translateY(-10px) rotate(-1.5deg) scale(1.01);
+  }
+  70% {
+    transform: translateY(-5px) rotate(1.5deg) scale(0.995);
+  }
+}
+
+@keyframes thrusterPlasma {
+  0%, 100% {
+    transform: scale(0.85);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.85;
+    box-shadow: 0 0 25px rgba(6, 182, 212, 0.8), 0 0 50px rgba(56, 189, 248, 0.4);
+  }
+}
+
+@keyframes eyeBlinkNatural {
+  0%, 94%, 100% {
+    transform: scaleY(1);
+  }
+  96%, 98% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes visorScanlineMove {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(200%);
+    opacity: 0;
+  }
+}
+
+@keyframes armGesture {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(-6deg) translateY(-2px);
+  }
+}
+
+@keyframes penWriteGesture {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(10deg) translateY(-3px);
+  }
+  75% {
+    transform: rotate(-5deg) translateY(2px);
+  }
+}
+
+@keyframes ringOrbit {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.4), inset 0 0 10px rgba(56, 189, 248, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(56, 189, 248, 0.8), inset 0 0 20px rgba(56, 189, 248, 0.5);
+  }
+}
+
+@keyframes speechPulse {
+  0%, 100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+/* 3D Robot Speaking Energetic Motion */
+@keyframes robotSpeaking3D {
+  0%, 100% {
+    transform: translateY(0px) rotateX(4deg) rotateY(0deg) rotateZ(0deg) scale(1);
+  }
+  20% {
+    transform: translateY(-14px) rotateX(-2deg) rotateY(-5deg) rotateZ(-1.8deg) scale(1.03);
+  }
+  40% {
+    transform: translateY(-8px) rotateX(6deg) rotateY(4deg) rotateZ(1.2deg) scale(1.02);
+  }
+  65% {
+    transform: translateY(-16px) rotateX(1deg) rotateY(-3deg) rotateZ(-1.2deg) scale(1.035);
+  }
+  85% {
+    transform: translateY(-6px) rotateX(5deg) rotateY(2deg) rotateZ(1deg) scale(1.015);
+  }
+}
+
+@keyframes speakingHeadNod {
+  0%, 100% {
+    transform: rotate(0deg) translateY(0px);
+  }
+  25% {
+    transform: rotate(-3deg) translateY(-2px);
+  }
+  75% {
+    transform: rotate(3deg) translateY(-1px);
+  }
+}
+
+@keyframes armSpeakingLeft {
+  0%, 100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  30% {
+    transform: rotate(-16deg) translateY(-6px) scale(1.04);
+  }
+  70% {
+    transform: rotate(-8deg) translateY(-3px) scale(1.02);
+  }
+}
+
+@keyframes armSpeakingRight {
+  0%, 100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  25% {
+    transform: rotate(18deg) translateY(-8px) scale(1.05);
+  }
+  60% {
+    transform: rotate(-6deg) translateY(-2px) scale(1.02);
+  }
+  85% {
+    transform: rotate(12deg) translateY(-5px) scale(1.04);
+  }
+}
+
+@keyframes ring3DGyroX {
+  0% {
+    transform: rotateX(72deg) rotateZ(0deg);
+  }
+  100% {
+    transform: rotateX(72deg) rotateZ(360deg);
+  }
+}
+
+@keyframes ring3DGyroY {
+  0% {
+    transform: rotateY(70deg) rotateX(25deg) rotateZ(0deg);
+  }
+  100% {
+    transform: rotateY(70deg) rotateX(25deg) rotateZ(-360deg);
+  }
+}
+
+@keyframes sonicWaveExpand {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.animate-float {
+  animation: robotHoverPhysics 4s ease-in-out infinite;
+}
+
+.animate-robot-speaking {
+  animation: robotSpeaking3D 3.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-head-nod {
+  transform-origin: 140px 140px;
+  animation: speakingHeadNod 2.2s ease-in-out infinite;
+}
+
+.animate-arm-speaking-left {
+  transform-origin: 94px 186px;
+  animation: armSpeakingLeft 2.4s ease-in-out infinite;
+}
+
+.animate-arm-speaking-right {
+  transform-origin: 186px 186px;
+  animation: armSpeakingRight 1.9s ease-in-out infinite;
+}
+
+.animate-orbit-slow {
+  animation: ringOrbit 25s linear infinite;
+}
+
+.animate-orbit-3d-x {
+  animation: ring3DGyroX 14s linear infinite;
+}
+
+.animate-orbit-3d-y {
+  animation: ring3DGyroY 18s linear infinite;
+}
+
+.animate-glow-cyan {
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+.animate-eye-blink {
+  transform-origin: center;
+  animation: eyeBlinkNatural 4.2s ease-in-out infinite;
+}
+
+.animate-thruster {
+  animation: thrusterPlasma 2s ease-in-out infinite;
+}
+
+.animate-thruster-fast {
+  animation: thrusterPlasma 0.8s ease-in-out infinite;
+}
+
+.animate-arm-left {
+  transform-origin: 94px 186px;
+  animation: armGesture 3.5s ease-in-out infinite;
+}
+
+.animate-arm-right {
+  transform-origin: 186px 186px;
+  animation: penWriteGesture 2.8s ease-in-out infinite;
+}

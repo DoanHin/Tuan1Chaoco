@@ -1,0 +1,6 @@
+{
+  "name": "Kéo Co Trí Tuệ",
+  "description": "Trò chơi tương tác Kéo Co Trí Tuệ cùng AI dẫn chương trình AZero dành cho học sinh Trường THPT Tô Hiệu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
