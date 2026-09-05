@@ -47,63 +47,152 @@ class AudioStorageManager {
 
   // Save audio blob (e.g. from file upload or mic recording)
   public async saveAudio(key: string, blob: Blob, meta: { name: string; duration?: number }): Promise<void> {
-    const db = await this.getDB();
     const storedData = {
       blob,
       meta: {
         name: meta.name,
         size: blob.size,
-        type: blob.type,
+        type: blob.type || 'audio/mp3',
         updatedAt: Date.now(),
         duration: meta.duration
       }
     };
 
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.put(storedData, key);
+    if (key === 'intro_audio') {
+      this.cachedBlob = blob;
+      this.cachedMeta = storedData.meta;
+    }
 
-      req.onsuccess = () => {
-        if (key === 'intro_audio') {
-          this.cachedBlob = blob;
-          this.cachedMeta = storedData.meta;
-        }
-        resolve();
-      };
-      req.onerror = () => reject(req.error);
-    });
+    // 1. Save to IndexedDB
+    try {
+      const db = await this.getDB();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.put(storedData, key);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    } catch {
+      // safe fallback
+    }
+
+    // 2. Persist to project disk /public/azero_intro.mp3 via server API so it is bundled when exporting ZIP
+    if (key === 'intro_audio' && typeof window !== 'undefined') {
+      try {
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          try {
+            const base64 = reader.result as string;
+            await fetch('/api/save-audio', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                base64,
+                name: meta.name,
+                type: blob.type,
+                duration: meta.duration
+              })
+            });
+          } catch {
+            // Safe fallback if offline or in static export
+          }
+        };
+        reader.readAsDataURL(blob);
+      } catch {
+        // ignore
+      }
+    }
   }
 
-  // Get audio blob and meta
+  // Get audio blob and meta (checks cache, IndexedDB, and static public/azero_intro.mp3)
   public async getAudio(key: string): Promise<{ blob: Blob; meta: StoredAudioMeta } | null> {
     if (key === 'intro_audio' && this.cachedBlob && this.cachedMeta) {
       return { blob: this.cachedBlob, meta: this.cachedMeta };
     }
 
+    // 1. Check IndexedDB
     try {
       const db = await this.getDB();
-      return new Promise((resolve, reject) => {
+      const fromDb = await new Promise<{ blob: Blob; meta: StoredAudioMeta } | null>((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readonly');
         const store = tx.objectStore(STORE_NAME);
         const req = store.get(key);
-
-        req.onsuccess = () => {
-          if (req.result) {
-            if (key === 'intro_audio') {
-              this.cachedBlob = req.result.blob;
-              this.cachedMeta = req.result.meta;
-            }
-            resolve(req.result);
-          } else {
-            resolve(null);
-          }
-        };
+        req.onsuccess = () => resolve(req.result || null);
         req.onerror = () => reject(req.error);
       });
+
+      if (fromDb) {
+        if (key === 'intro_audio') {
+          this.cachedBlob = fromDb.blob;
+          this.cachedMeta = fromDb.meta;
+        }
+        return fromDb;
+      }
     } catch {
-      return null;
+      // Continue to check disk/server
     }
+
+    // 2. Check static file on server/public directory (Crucial for exported apps!)
+    if (key === 'intro_audio' && typeof window !== 'undefined') {
+      try {
+        // Check API status first
+        const statusRes = await fetch('/api/audio-status');
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          if (statusData.exists) {
+            const fileRes = await fetch(statusData.url || '/azero_intro.mp3');
+            if (fileRes.ok) {
+              const blob = await fileRes.blob();
+              const meta: StoredAudioMeta = {
+                name: statusData.meta?.name || 'azero_intro.mp3',
+                size: blob.size,
+                type: blob.type || 'audio/mp3',
+                updatedAt: statusData.meta?.updatedAt || Date.now(),
+                duration: statusData.meta?.duration
+              };
+              this.cachedBlob = blob;
+              this.cachedMeta = meta;
+              return { blob, meta };
+            }
+          }
+        }
+      } catch {
+        // Direct fetch attempt for exported static build
+        try {
+          const fileRes = await fetch('/azero_intro.mp3');
+          if (fileRes.ok && fileRes.headers.get('content-type')?.includes('audio')) {
+            const blob = await fileRes.blob();
+            const meta: StoredAudioMeta = {
+              name: 'azero_intro.mp3',
+              size: blob.size,
+              type: blob.type || 'audio/mp3',
+              updatedAt: Date.now()
+            };
+            this.cachedBlob = blob;
+            this.cachedMeta = meta;
+            return { blob, meta };
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // Download audio file to local computer
+  public downloadAudio(blob: Blob, filename = 'azero_intro.mp3'): void {
+    if (typeof window === 'undefined') return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   // Remove audio
@@ -116,7 +205,7 @@ class AudioStorageManager {
 
     try {
       const db = await this.getDB();
-      return new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         const req = store.delete(key);
@@ -125,6 +214,15 @@ class AudioStorageManager {
       });
     } catch {
       // ignore
+    }
+
+    // Also delete from disk API
+    if (key === 'intro_audio' && typeof window !== 'undefined') {
+      try {
+        await fetch('/api/delete-audio', { method: 'POST' });
+      } catch {
+        // ignore
+      }
     }
   }
 

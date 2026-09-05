@@ -13,7 +13,9 @@ import {
   X,
   Volume2,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  Download,
+  HardDrive
 } from 'lucide-react';
 import { audioStorage, StoredAudioMeta } from '../utils/audioStorage';
 import { soundManager } from '../utils/sound';
@@ -362,7 +364,7 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 self-end sm:self-center">
+            <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
               <button
                 onClick={handleTogglePlayStored}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer ${
@@ -376,6 +378,18 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
               </button>
 
               <button
+                onClick={() => {
+                  soundManager.playClick();
+                  audioStorage.downloadAudio(storedAudio.blob, storedAudio.meta.name || 'azero_intro.mp3');
+                }}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                title="Tải tệp âm thanh này về máy tính của bạn"
+              >
+                <Download className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Tải về máy</span>
+              </button>
+
+              <button
                 onClick={handleDeleteStoredAudio}
                 className="px-3 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
                 title="Xóa để quay lại giọng AI tự động"
@@ -386,6 +400,17 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
             </div>
           </div>
         )}
+
+        {/* Permanent disk storage notice */}
+        <div className="mt-3 p-3 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 text-xs text-cyan-200 flex items-start gap-2.5">
+          <HardDrive className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+          <div className="leading-relaxed">
+            <span className="font-bold text-white">Lưu ý khi Xuất ứng dụng (Export ZIP / Chạy offline):</span>
+            <span className="text-slate-300 ml-1">
+              Khi bạn tải lên hoặc ghi âm, tệp sẽ được lưu trực tiếp vào thư mục <code className="bg-slate-950 px-1.5 py-0.5 rounded text-cyan-300 font-mono text-[11px]">public/azero_intro.mp3</code> của dự án. Khi xuất file ZIP hoặc tải code về máy tính, file ghi âm này sẽ luôn đi kèm dự án để phát tự động mà không bị mất!
+            </span>
+          </div>
+        </div>
 
         {/* Tab Selection */}
         <div className="flex items-center gap-2 mt-4 p-1 rounded-2xl bg-slate-950 border border-slate-800">

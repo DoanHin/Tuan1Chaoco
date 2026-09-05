@@ -13,7 +13,8 @@ import {
   BookOpen, 
   Eye, 
   EyeOff,
-  ChevronDown
+  ChevronDown,
+  FileAudio
 } from 'lucide-react';
 import { AZeroAvatar } from './AZeroAvatar';
 import { VoiceSettingsModal } from './VoiceSettingsModal';
@@ -221,6 +222,24 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
         </div>
 
         <div className="flex items-center gap-2 sm:gap-2.5">
+          {/* Audio Upload / Management Button */}
+          <button
+            id="btn-manage-audio"
+            onClick={() => setIsAudioUploadOpen(true)}
+            className={`px-3 py-1.5 text-xs font-bold rounded-full flex items-center gap-1.5 shadow transition cursor-pointer border ${
+              customAudio
+                ? 'bg-amber-950/80 hover:bg-amber-900 border-amber-500/50 text-amber-300'
+                : 'bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-slate-300'
+            }`}
+            title="Quản lý và tải lên file ghi âm AZero"
+          >
+            <FileAudio className="w-3.5 h-3.5 text-amber-400" />
+            <span>File ghi âm</span>
+            {customAudio && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Đã có file ghi âm" />
+            )}
+          </button>
+
           {/* Rules Quick Toggle Button */}
           <button
             id="btn-toggle-rules"
@@ -317,6 +336,15 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
                 <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
                 <span>{manualShowRules ? 'Đóng luật chơi' : 'Xem trước luật chơi'}</span>
               </button>
+
+              <button
+                onClick={() => setIsAudioUploadOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-amber-300 transition cursor-pointer"
+                title="Quản lý và tải lên file ghi âm AZero"
+              >
+                <FileAudio className="w-3.5 h-3.5 text-amber-400" />
+                <span>{customAudio ? `Bản ghi âm: ${customAudio.meta.name}` : 'Nạp file ghi âm AZero'}</span>
+              </button>
             </div>
           </motion.div>
         ) : (
@@ -328,7 +356,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
                   <span className="text-xs font-tech font-bold uppercase tracking-wider text-cyan-300">
-                    AZero đang phát biểu (Phần {currentSentenceIndex + 1}/{WELCOME_SENTENCES.length})
+                    {isPlayingCustomAudio
+                      ? 'AZero đang phát bản ghi âm của bạn'
+                      : `AZero đang phát biểu (Phần ${currentSentenceIndex + 1}/${WELCOME_SENTENCES.length})`}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -338,7 +368,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
                     </span>
                   )}
                   <span className="text-[10px] text-cyan-400 font-mono hidden sm:inline">
-                    Giọng Adam (Trầm ấm)
+                    {isPlayingCustomAudio ? 'Bản ghi âm AZero' : 'Giọng Adam (Trầm ấm)'}
                   </span>
                 </div>
               </div>
