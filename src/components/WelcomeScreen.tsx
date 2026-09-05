@@ -22,7 +22,7 @@ import { AudioUploadModal } from './AudioUploadModal';
 import { RulesDisplay } from './RulesDisplay';
 import { speechManager } from '../utils/speech';
 import { soundManager } from '../utils/sound';
-import { audioStorage, StoredAudioMeta, StoredAudioItem } from '../utils/audioStorage';
+import { audioStorage, StoredAudioMeta } from '../utils/audioStorage';
 
 interface WelcomeScreenProps {
   onStartGame: () => void;
@@ -50,16 +50,16 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [isAudioUploadOpen, setIsAudioUploadOpen] = useState(false);
-  const [customAudio, setCustomAudio] = useState<StoredAudioItem | null>(() => audioStorage.getImmediateAudio());
+  const [customAudio, setCustomAudio] = useState<{ blob: Blob; meta: StoredAudioMeta } | null>(null);
   const [isPlayingCustomAudio, setIsPlayingCustomAudio] = useState(false);
   const [manualShowRules, setManualShowRules] = useState(false);
   const isMountedRef = useRef(true);
 
-  // Check if custom audio is uploaded or updated on server / indexedDB
+  // Check if custom audio is uploaded in indexedDB
   const refreshCustomAudio = async () => {
     try {
       const stored = await audioStorage.getAudio('intro_audio');
-      if (isMountedRef.current && stored) {
+      if (isMountedRef.current) {
         setCustomAudio(stored);
       }
     } catch {
@@ -96,18 +96,16 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
   const activeRuleStep = getActiveRuleStep(currentSentenceIndex);
 
   // Start reading automatically without extra clicks
-  const startIntroduction = (fromIndex = 0) => {
+  const startIntroduction = async (fromIndex = 0) => {
     setHasStartedSpeech(true);
     setCurrentSentenceIndex(fromIndex);
 
-    const audioToPlay = customAudio || audioStorage.getImmediateAudio();
-
     // If custom audio recording is available, play custom audio with synchronized timeline!
-    if (audioToPlay) {
+    if (customAudio) {
       speechManager.stop();
       setIsPlayingCustomAudio(true);
 
-      audioStorage.playCustomAudio(audioToPlay.url, {
+      audioStorage.playCustomAudio(customAudio.blob, {
         onStart: () => {
           if (isMountedRef.current) setIsPlayingCustomAudio(true);
         },
@@ -134,13 +132,10 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
             setCurrentSentenceIndex(WELCOME_SENTENCES.length - 1);
           }
         },
-        onError: (err) => {
-          console.warn('Playback error:', err);
+        onError: () => {
           if (isMountedRef.current) setIsPlayingCustomAudio(false);
           fallbackSpeechReading(fromIndex);
         }
-      }).catch((err) => {
-        console.warn('Audio play failed:', err);
       });
       return;
     }
@@ -342,16 +337,14 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
                 <span>{manualShowRules ? 'Đóng luật chơi' : 'Xem trước luật chơi'}</span>
               </button>
 
-              {!customAudio && (
-                <button
-                  onClick={() => setIsAudioUploadOpen(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-amber-300 transition cursor-pointer"
-                  title="Quản lý và tải lên file ghi âm AZero"
-                >
-                  <FileAudio className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Nạp file ghi âm AZero</span>
-                </button>
-              )}
+              <button
+                onClick={() => setIsAudioUploadOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-amber-300 transition cursor-pointer"
+                title="Quản lý và tải lên file ghi âm AZero"
+              >
+                <FileAudio className="w-3.5 h-3.5 text-amber-400" />
+                <span>{customAudio ? `Bản ghi âm: ${customAudio.meta.name}` : 'Nạp file ghi âm AZero'}</span>
+              </button>
             </div>
           </motion.div>
         ) : (
@@ -363,7 +356,9 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping" />
                   <span className="text-xs font-tech font-bold uppercase tracking-wider text-cyan-300">
-                    AZero đang phát biểu (Phần {currentSentenceIndex + 1}/{WELCOME_SENTENCES.length})
+                    {isPlayingCustomAudio
+                      ? 'AZero đang phát bản ghi âm của bạn'
+                      : `AZero đang phát biểu (Phần ${currentSentenceIndex + 1}/${WELCOME_SENTENCES.length})`}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -373,7 +368,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
                     </span>
                   )}
                   <span className="text-[10px] text-cyan-400 font-mono hidden sm:inline">
-                    {isPlayingCustomAudio ? 'Robot AZero' : 'Giọng Adam (Trầm ấm)'}
+                    {isPlayingCustomAudio ? 'Bản ghi âm AZero' : 'Giọng Adam (Trầm ấm)'}
                   </span>
                 </div>
               </div>
