@@ -63,21 +63,27 @@ function audioStoragePlugin(): Plugin {
                   const audioPath = path.join(publicDir, 'azero_intro.mp3');
                   fs.writeFileSync(audioPath, fileBuffer);
 
+                  const metaObj = {
+                    name: data.name || 'azero_intro.mp3',
+                    size: fileBuffer.length,
+                    type: data.type || 'audio/mp3',
+                    duration: data.duration,
+                    updatedAt: Date.now(),
+                  };
+
                   const metaPath = path.join(publicDir, 'azero_audio_meta.json');
-                  fs.writeFileSync(
-                    metaPath,
-                    JSON.stringify(
-                      {
-                        name: data.name || 'azero_intro.mp3',
-                        size: fileBuffer.length,
-                        type: data.type || 'audio/mp3',
-                        duration: data.duration,
-                        updatedAt: Date.now(),
-                      },
-                      null,
-                      2
-                    )
-                  );
+                  fs.writeFileSync(metaPath, JSON.stringify(metaObj, null, 2));
+
+                  // Also mirror to dist/ if present so build/preview is always synchronized immediately
+                  const distDir = path.resolve(__dirname, 'dist');
+                  if (fs.existsSync(distDir)) {
+                    try {
+                      fs.writeFileSync(path.join(distDir, 'azero_intro.mp3'), fileBuffer);
+                      fs.writeFileSync(path.join(distDir, 'azero_audio_meta.json'), JSON.stringify(metaObj, null, 2));
+                    } catch {
+                      // ignore
+                    }
+                  }
 
                   res.setHeader('Content-Type', 'application/json');
                   res.end(JSON.stringify({ success: true, path: '/azero_intro.mp3' }));
@@ -91,6 +97,16 @@ function audioStoragePlugin(): Plugin {
                 // Raw binary
                 const audioPath = path.join(publicDir, 'azero_intro.mp3');
                 fs.writeFileSync(audioPath, bodyBuffer);
+
+                const distDir = path.resolve(__dirname, 'dist');
+                if (fs.existsSync(distDir)) {
+                  try {
+                    fs.writeFileSync(path.join(distDir, 'azero_intro.mp3'), bodyBuffer);
+                  } catch {
+                    // ignore
+                  }
+                }
+
                 res.setHeader('Content-Type', 'application/json');
                 res.end(JSON.stringify({ success: true, path: '/azero_intro.mp3' }));
                 return;
@@ -106,6 +122,7 @@ function audioStoragePlugin(): Plugin {
         // Delete audio from disk
         if (url.startsWith('/api/delete-audio') && req.method === 'POST') {
           const publicDir = path.resolve(__dirname, 'public');
+          const distDir = path.resolve(__dirname, 'dist');
           const audioPath = path.join(publicDir, 'azero_intro.mp3');
           const metaPath = path.join(publicDir, 'azero_audio_meta.json');
           if (fs.existsSync(audioPath)) {
@@ -118,6 +135,16 @@ function audioStoragePlugin(): Plugin {
           if (fs.existsSync(metaPath)) {
             try {
               fs.unlinkSync(metaPath);
+            } catch {
+              // ignore
+            }
+          }
+          if (fs.existsSync(distDir)) {
+            try {
+              const dAudio = path.join(distDir, 'azero_intro.mp3');
+              const dMeta = path.join(distDir, 'azero_audio_meta.json');
+              if (fs.existsSync(dAudio)) fs.unlinkSync(dAudio);
+              if (fs.existsSync(dMeta)) fs.unlinkSync(dMeta);
             } catch {
               // ignore
             }

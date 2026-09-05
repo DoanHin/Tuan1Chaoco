@@ -17,7 +17,7 @@ import {
   Download,
   HardDrive
 } from 'lucide-react';
-import { audioStorage, StoredAudioMeta } from '../utils/audioStorage';
+import { audioStorage, StoredAudioMeta, StoredAudioItem } from '../utils/audioStorage';
 import { soundManager } from '../utils/sound';
 
 interface AudioUploadModalProps {
@@ -34,7 +34,7 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
   const [activeTab, setActiveTab] = useState<'upload' | 'record'>('upload');
   
   // Stored audio state
-  const [storedAudio, setStoredAudio] = useState<{ blob: Blob; meta: StoredAudioMeta } | null>(null);
+  const [storedAudio, setStoredAudio] = useState<StoredAudioItem | null>(null);
   const [isPlayingStored, setIsPlayingStored] = useState<boolean>(false);
   const storedAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
@@ -74,8 +74,8 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
       const diskCheck = await audioStorage.checkDiskAudio();
       setIsDiskSaved(diskCheck.exists);
 
-      // Auto-sync if present in browser but not on disk
-      if (data && !diskCheck.exists) {
+      // Auto-sync if present in browser blob but not on disk
+      if (data && data.blob && !diskCheck.exists) {
         setIsSavingToDisk(true);
         const ok = await audioStorage.syncToDisk(data.blob, data.meta);
         setIsDiskSaved(ok);
@@ -88,6 +88,14 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
 
   const handleForceSaveToDisk = async () => {
     if (!storedAudio) return;
+    if (!storedAudio.blob) {
+      setIsDiskSaved(true);
+      setFeedbackMsg({
+        type: 'success',
+        text: 'File âm thanh đã được đồng bộ sẵn trên máy chủ web (/azero_intro.mp3)!'
+      });
+      return;
+    }
     setIsSavingToDisk(true);
     soundManager.playClick();
     const ok = await audioStorage.syncToDisk(storedAudio.blob, storedAudio.meta);
@@ -96,7 +104,7 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
     if (ok) {
       setFeedbackMsg({
         type: 'success',
-        text: 'Đã lưu vĩnh viễn vào tệp public/azero_intro.mp3! Khi xuất ZIP hoặc làm web, file âm thanh này sẽ luôn đi kèm dự án!'
+        text: 'Đã đồng bộ toàn web (/azero_intro.mp3)! Bất kỳ ai truy cập đường link này đều sẽ nghe file âm thanh này.'
       });
     } else {
       setFeedbackMsg({
@@ -268,18 +276,15 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
       setIsPlayingStored(false);
     } else {
       stopAllAudio();
-      const url = URL.createObjectURL(storedAudio.blob);
-      const audio = new Audio(url);
+      const audio = new Audio(storedAudio.url);
       storedAudioPlayerRef.current = audio;
 
       audio.onplay = () => setIsPlayingStored(true);
       audio.onended = () => {
         setIsPlayingStored(false);
-        URL.revokeObjectURL(url);
       };
       audio.onerror = () => {
         setIsPlayingStored(false);
-        URL.revokeObjectURL(url);
       };
 
       audio.play().catch(() => setIsPlayingStored(false));
@@ -413,7 +418,7 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
               <button
                 onClick={() => {
                   soundManager.playClick();
-                  audioStorage.downloadAudio(storedAudio.blob, storedAudio.meta.name || 'azero_intro.mp3');
+                  audioStorage.downloadAudio(storedAudio.blob || storedAudio.url, storedAudio.meta.name || 'azero_intro.mp3');
                 }}
                 className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 hover:text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
                 title="Tải tệp âm thanh này về máy tính của bạn"
@@ -449,10 +454,10 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
               )}
               <span className="font-medium">
                 {isDiskSaved
-                  ? 'Đã lưu vĩnh viễn vào tệp public/azero_intro.mp3 — Xuất web / ZIP sẽ luôn giữ giọng này!'
+                  ? 'Đã đồng bộ toàn trang web — Bất kỳ ai mở link web này đều sẽ nghe đúng bản ghi âm này!'
                   : isSavingToDisk
-                  ? 'Đang đồng bộ file ghi âm vào thư mục mã nguồn public/...'
-                  : 'Bản ghi âm đang ở bộ nhớ tạm trình duyệt. Cần lưu vào mã nguồn để khi xuất web không bị mất!'}
+                  ? 'Đang đồng bộ file ghi âm vào máy chủ web...'
+                  : 'Bản ghi âm đang ở bộ nhớ tạm trình duyệt. Bấm nút bên cạnh để đồng bộ cho tất cả người xem!'}
               </span>
             </div>
             {!isDiskSaved && (
@@ -462,7 +467,7 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
                 className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 transition shadow cursor-pointer flex items-center gap-1.5"
               >
                 <HardDrive className="w-3.5 h-3.5" />
-                <span>{isSavingToDisk ? 'Đang lưu...' : 'Lưu vào mã nguồn web'}</span>
+                <span>{isSavingToDisk ? 'Đang lưu...' : 'Đồng bộ cho mọi người'}</span>
               </button>
             )}
           </div>

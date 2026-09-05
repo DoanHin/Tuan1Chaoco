@@ -1,4 +1,4 @@
-// IndexedDB Storage for custom user-uploaded or recorded audio
+// IndexedDB & Network Audio Storage for custom user-uploaded or recorded audio
 import { speechManager } from './speech';
 
 const DB_NAME = 'azero_audio_db';
@@ -13,12 +13,18 @@ export interface StoredAudioMeta {
   duration?: number;
 }
 
+export interface StoredAudioItem {
+  url: string;
+  blob?: Blob;
+  meta: StoredAudioMeta;
+}
+
 class AudioStorageManager {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private currentAudioElement: HTMLAudioElement | null = null;
+  private preloadedAudio: HTMLAudioElement | null = null;
   private isPlayingCustom: boolean = false;
-  private cachedBlob: Blob | null = null;
-  private cachedMeta: StoredAudioMeta | null = null;
+  private cachedItem: StoredAudioItem | null = null;
   private onStatusChangeListeners: Set<(isPlaying: boolean) => void> = new Set();
 
   private getDB(): Promise<IDBDatabase> {
@@ -43,6 +49,21 @@ class AudioStorageManager {
     });
 
     return this.dbPromise;
+  }
+
+  // Preload audio into memory so it starts without network delay when user clicks play
+  private preloadAudio(url: string) {
+    if (typeof window === 'undefined') return;
+    try {
+      if (!this.preloadedAudio || this.preloadedAudio.src !== url) {
+        this.preloadedAudio = new Audio();
+        this.preloadedAudio.preload = 'auto';
+        this.preloadedAudio.src = url;
+        this.preloadedAudio.load();
+      }
+    } catch {
+      // ignore
+    }
   }
 
   // Persist to server disk /public/azero_intro.mp3 via server API
@@ -83,6 +104,11 @@ class AudioStorageManager {
         })
       });
 
+      if (res.ok) {
+        // Invalidate cache to refetch from synced server file
+        this.cachedItem = null;
+      }
+
       return res.ok;
     } catch {
       return false;
@@ -90,92 +116,66 @@ class AudioStorageManager {
   }
 
   // Check if audio file is physically saved on server disk
-  public async checkDiskAudio(): Promise<{ exists: boolean; meta?: any }> {
+  public async checkDiskAudio(): Promise<{ exists: boolean; meta?: any; url?: string }> {
     if (typeof window === 'undefined') return { exists: false };
     try {
+      // 1. Try server API
       const res = await fetch('/api/audio-status');
       if (res.ok) {
         const contentType = res.headers.get('content-type') || '';
         if (contentType.includes('application/json')) {
-          return await res.json();
+          const data = await res.json();
+          if (data.exists) return data;
         }
       }
     } catch {
       // ignore
     }
+
+    // 2. Try static json file fallback (for exported / static hosted websites)
+    try {
+      const basePath = (((import.meta as any).env?.BASE_URL || '/') as string).replace(/\/$/, '');
+      const metaRes = await fetch(`${basePath}/azero_audio_meta.json?t=${Date.now()}`);
+      if (metaRes.ok && metaRes.headers.get('content-type')?.includes('application/json')) {
+        const meta = await metaRes.json();
+        if (meta && meta.size > 1000) {
+          return {
+            exists: true,
+            meta,
+            url: `${basePath}/azero_intro.mp3?v=${meta.updatedAt || Date.now()}`
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     return { exists: false };
   }
 
-  // Load static audio from public directory (works in exported web / static hosting)
-  public async loadStaticAudio(): Promise<{ blob: Blob; meta: StoredAudioMeta } | null> {
-    if (typeof window === 'undefined') return null;
-
-    const basePath = (((import.meta as any).env?.BASE_URL || '/') as string).replace(/\/$/, '');
-    const candidates = [
-      `${basePath}/azero_intro.mp3`,
-      './azero_intro.mp3',
-      '/azero_intro.mp3'
-    ];
-
-    for (const url of candidates) {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) continue;
-
-        const contentType = res.headers.get('content-type') || '';
-        // In SPA servers (e.g. Netlify/Vercel/Vite preview), 404 returns index.html!
-        if (contentType.includes('text/html') || contentType.includes('application/xhtml+xml')) {
-          continue;
-        }
-
-        const blob = await res.blob();
-        if (blob.size < 512) continue; // Invalid or empty file
-
-        let meta: StoredAudioMeta = {
-          name: 'azero_intro.mp3',
-          size: blob.size,
-          type: blob.type || 'audio/mp3',
-          updatedAt: Date.now()
-        };
-
-        // Attempt reading metadata
-        try {
-          const metaRes = await fetch(`${basePath}/azero_audio_meta.json`);
-          if (metaRes.ok) {
-            const mType = metaRes.headers.get('content-type') || '';
-            if (mType.includes('application/json')) {
-              const parsed = await metaRes.json();
-              meta = { ...meta, ...parsed };
-            }
-          }
-        } catch {
-          // ignore
-        }
-
-        return { blob, meta };
-      } catch {
-        // try next candidate
-      }
-    }
-    return null;
-  }
-
-  // Save audio blob (e.g. from file upload or mic recording)
+  // Save audio blob (from file upload or mic recording)
   public async saveAudio(key: string, blob: Blob, meta: { name: string; duration?: number }): Promise<void> {
-    const storedData = {
-      blob,
-      meta: {
-        name: meta.name,
-        size: blob.size,
-        type: blob.type || 'audio/mp3',
-        updatedAt: Date.now(),
-        duration: meta.duration
-      }
+    const metaData: StoredAudioMeta = {
+      name: meta.name,
+      size: blob.size,
+      type: blob.type || 'audio/mp3',
+      updatedAt: Date.now(),
+      duration: meta.duration
     };
 
+    const storedData = {
+      blob,
+      meta: metaData
+    };
+
+    const objectUrl = URL.createObjectURL(blob);
     if (key === 'intro_audio') {
-      this.cachedBlob = blob;
-      this.cachedMeta = storedData.meta;
+      this.cachedItem = {
+        url: objectUrl,
+        blob,
+        meta: metaData
+      };
+      this.preloadAudio(objectUrl);
     }
 
     // 1. Save to IndexedDB
@@ -192,19 +192,94 @@ class AudioStorageManager {
       // safe fallback
     }
 
-    // 2. Persist to project disk /public/azero_intro.mp3 via server API so it is bundled when exporting ZIP
+    // 2. Persist to project disk /public/azero_intro.mp3 via server API
     if (key === 'intro_audio') {
-      this.syncToDisk(blob, storedData.meta).catch(() => {});
+      await this.syncToDisk(blob, metaData);
     }
   }
 
-  // Get audio blob and meta (checks cache, IndexedDB, and static public/azero_intro.mp3)
-  public async getAudio(key: string): Promise<{ blob: Blob; meta: StoredAudioMeta } | null> {
-    if (key === 'intro_audio' && this.cachedBlob && this.cachedMeta) {
-      return { blob: this.cachedBlob, meta: this.cachedMeta };
+  // Get audio item (checks server/static disk first for instant streaming, then IndexedDB)
+  public async getAudio(key: string, forceFresh = false): Promise<StoredAudioItem | null> {
+    if (key === 'intro_audio' && this.cachedItem && !forceFresh) {
+      return this.cachedItem;
     }
 
-    // 1. Check IndexedDB
+    // 1. Fast server / static public check (Crucial for ANY user who visits the shared link!)
+    if (key === 'intro_audio' && typeof window !== 'undefined') {
+      const basePath = (((import.meta as any).env?.BASE_URL || '/') as string).replace(/\/$/, '');
+
+      // Check 1A: azero_audio_meta.json (lightweight 150 bytes, finishes in ~10ms!)
+      try {
+        const metaRes = await fetch(`${basePath}/azero_audio_meta.json?t=${Date.now()}`);
+        if (metaRes.ok) {
+          const cType = metaRes.headers.get('content-type') || '';
+          if (cType.includes('application/json')) {
+            const metaJson: StoredAudioMeta = await metaRes.json();
+            if (metaJson && metaJson.size > 1000) {
+              const streamUrl = `${basePath}/azero_intro.mp3?v=${metaJson.updatedAt || Date.now()}`;
+              const item: StoredAudioItem = {
+                url: streamUrl,
+                meta: metaJson
+              };
+              this.cachedItem = item;
+              this.preloadAudio(streamUrl);
+              return item;
+            }
+          }
+        }
+      } catch {
+        // continue
+      }
+
+      // Check 1B: API endpoint /api/audio-status
+      try {
+        const statusRes = await fetch('/api/audio-status');
+        if (statusRes.ok) {
+          const cType = statusRes.headers.get('content-type') || '';
+          if (cType.includes('application/json')) {
+            const data = await statusRes.json();
+            if (data.exists && data.meta) {
+              const streamUrl = data.url || `${basePath}/azero_intro.mp3?v=${data.meta.updatedAt || Date.now()}`;
+              const item: StoredAudioItem = {
+                url: streamUrl,
+                meta: data.meta
+              };
+              this.cachedItem = item;
+              this.preloadAudio(streamUrl);
+              return item;
+            }
+          }
+        }
+      } catch {
+        // continue
+      }
+
+      // Check 1C: Direct HEAD request to /azero_intro.mp3
+      try {
+        const headRes = await fetch(`${basePath}/azero_intro.mp3`, { method: 'HEAD' });
+        const cType = headRes.headers.get('content-type') || '';
+        const cLen = parseInt(headRes.headers.get('content-length') || '0', 10);
+        if (headRes.ok && !cType.includes('text/html') && cLen > 1000) {
+          const streamUrl = `${basePath}/azero_intro.mp3`;
+          const item: StoredAudioItem = {
+            url: streamUrl,
+            meta: {
+              name: 'azero_intro.mp3',
+              size: cLen,
+              type: cType || 'audio/mpeg',
+              updatedAt: Date.now()
+            }
+          };
+          this.cachedItem = item;
+          this.preloadAudio(streamUrl);
+          return item;
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    // 2. Check IndexedDB in current browser
     try {
       const db = await this.getDB();
       const fromDb = await new Promise<{ blob: Blob; meta: StoredAudioMeta } | null>((resolve, reject) => {
@@ -216,58 +291,60 @@ class AudioStorageManager {
       });
 
       if (fromDb && fromDb.blob) {
+        const objUrl = URL.createObjectURL(fromDb.blob);
+        const item: StoredAudioItem = {
+          url: objUrl,
+          blob: fromDb.blob,
+          meta: fromDb.meta
+        };
         if (key === 'intro_audio') {
-          this.cachedBlob = fromDb.blob;
-          this.cachedMeta = fromDb.meta;
-          // IMPORTANT: Automatically sync to /api/save-audio so it's guaranteed to be on disk for export!
+          this.cachedItem = item;
+          this.preloadAudio(objUrl);
+          // Auto sync to disk if not yet on disk
           this.syncToDisk(fromDb.blob, fromDb.meta).catch(() => {});
         }
-        return fromDb;
+        return item;
       }
     } catch {
-      // Continue to check disk/server
-    }
-
-    // 2. Check static file on server / exported dist directory (Crucial for exported web!)
-    if (key === 'intro_audio') {
-      const staticData = await this.loadStaticAudio();
-      if (staticData) {
-        this.cachedBlob = staticData.blob;
-        this.cachedMeta = staticData.meta;
-        // Save to current browser's IndexedDB so it's cached locally as well
-        try {
-          const db = await this.getDB();
-          const tx = db.transaction(STORE_NAME, 'readwrite');
-          tx.objectStore(STORE_NAME).put(staticData, key);
-        } catch {
-          // ignore
-        }
-        return staticData;
-      }
+      // ignore
     }
 
     return null;
   }
 
   // Download audio file to local computer
-  public downloadAudio(blob: Blob, filename = 'azero_intro.mp3'): void {
+  public async downloadAudio(source: Blob | string, filename = 'azero_intro.mp3'): Promise<void> {
     if (typeof window === 'undefined') return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if (source instanceof Blob) {
+      const url = URL.createObjectURL(source);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } else {
+      try {
+        const res = await fetch(source);
+        const blob = await res.blob();
+        await this.downloadAudio(blob, filename);
+      } catch {
+        const a = document.createElement('a');
+        a.href = source;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    }
   }
 
-  // Remove audio
+  // Remove audio from everywhere
   public async removeAudio(key: string): Promise<void> {
     this.stopPlayback();
     if (key === 'intro_audio') {
-      this.cachedBlob = null;
-      this.cachedMeta = null;
+      this.cachedItem = null;
     }
 
     try {
@@ -301,16 +378,16 @@ class AudioStorageManager {
   private notifyStatus(isPlaying: boolean, text?: string) {
     this.isPlayingCustom = isPlaying;
     this.onStatusChangeListeners.forEach(cb => cb(isPlaying));
-    speechManager.notifyExternalSpeaking(isPlaying, text || (isPlaying ? 'AZero đang phát bản ghi âm của bạn' : undefined));
+    speechManager.notifyExternalSpeaking(isPlaying, text || (isPlaying ? 'AZero đang phát biểu' : undefined));
   }
 
   public isPlaying(): boolean {
     return this.isPlayingCustom;
   }
 
-  // Play stored audio
+  // Play stored audio via direct URL or Blob stream
   public async playCustomAudio(
-    blob: Blob,
+    source: Blob | string,
     options?: {
       onStart?: () => void;
       onEnd?: () => void;
@@ -320,7 +397,15 @@ class AudioStorageManager {
   ): Promise<HTMLAudioElement> {
     this.stopPlayback();
 
-    const audioUrl = URL.createObjectURL(blob);
+    let audioUrl: string;
+    let isCreatedBlobUrl = false;
+    if (typeof source === 'string') {
+      audioUrl = source;
+    } else {
+      audioUrl = URL.createObjectURL(source);
+      isCreatedBlobUrl = true;
+    }
+
     const audio = new Audio(audioUrl);
     this.currentAudioElement = audio;
 
@@ -335,13 +420,17 @@ class AudioStorageManager {
 
     audio.onended = () => {
       this.notifyStatus(false);
-      URL.revokeObjectURL(audioUrl);
+      if (isCreatedBlobUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
       options?.onEnd?.();
     };
 
     audio.onerror = (e) => {
       this.notifyStatus(false);
-      URL.revokeObjectURL(audioUrl);
+      if (isCreatedBlobUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
       options?.onError?.(e);
     };
 
@@ -349,6 +438,9 @@ class AudioStorageManager {
       await audio.play();
     } catch (err) {
       this.notifyStatus(false);
+      if (isCreatedBlobUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
       options?.onError?.(err);
       throw err;
     }
