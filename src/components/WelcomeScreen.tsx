@@ -100,12 +100,24 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStartGame }) => 
     setHasStartedSpeech(true);
     setCurrentSentenceIndex(fromIndex);
 
+    let audioToPlay = customAudio;
+    if (!audioToPlay) {
+      try {
+        audioToPlay = await audioStorage.getAudio('intro_audio');
+        if (audioToPlay && isMountedRef.current) {
+          setCustomAudio(audioToPlay);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     // If custom audio recording is available, play custom audio with synchronized timeline!
-    if (customAudio) {
+    if (audioToPlay) {
       speechManager.stop();
       setIsPlayingCustomAudio(true);
 
-      audioStorage.playCustomAudio(customAudio.blob, {
+      audioStorage.playCustomAudio(audioToPlay.blob, {
         onStart: () => {
           if (isMountedRef.current) setIsPlayingCustomAudio(true);
         },

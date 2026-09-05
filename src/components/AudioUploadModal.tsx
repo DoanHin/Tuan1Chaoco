@@ -54,6 +54,8 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
   const recordedAudioPlayerRef = useRef<HTMLAudioElement | null>(null);
 
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isDiskSaved, setIsDiskSaved] = useState<boolean | null>(null);
+  const [isSavingToDisk, setIsSavingToDisk] = useState<boolean>(false);
 
   // Load stored audio when opened
   useEffect(() => {
@@ -68,8 +70,39 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
     try {
       const data = await audioStorage.getAudio('intro_audio');
       setStoredAudio(data);
+
+      const diskCheck = await audioStorage.checkDiskAudio();
+      setIsDiskSaved(diskCheck.exists);
+
+      // Auto-sync if present in browser but not on disk
+      if (data && !diskCheck.exists) {
+        setIsSavingToDisk(true);
+        const ok = await audioStorage.syncToDisk(data.blob, data.meta);
+        setIsDiskSaved(ok);
+        setIsSavingToDisk(false);
+      }
     } catch {
       // ignore
+    }
+  };
+
+  const handleForceSaveToDisk = async () => {
+    if (!storedAudio) return;
+    setIsSavingToDisk(true);
+    soundManager.playClick();
+    const ok = await audioStorage.syncToDisk(storedAudio.blob, storedAudio.meta);
+    setIsDiskSaved(ok);
+    setIsSavingToDisk(false);
+    if (ok) {
+      setFeedbackMsg({
+        type: 'success',
+        text: 'Đã lưu vĩnh viễn vào tệp public/azero_intro.mp3! Khi xuất ZIP hoặc làm web, file âm thanh này sẽ luôn đi kèm dự án!'
+      });
+    } else {
+      setFeedbackMsg({
+        type: 'error',
+        text: 'Không thể ghi vào đĩa dự án. Hãy thử tải lên lại tệp âm thanh.'
+      });
     }
   };
 
@@ -398,6 +431,40 @@ export const AudioUploadModal: React.FC<AudioUploadModalProps> = ({
                 <span>Gỡ bỏ</span>
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Sync Status Badge for Stored Audio */}
+        {storedAudio && (
+          <div className={`mt-2.5 px-3 py-2 rounded-xl text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border transition ${
+            isDiskSaved
+              ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+              : 'bg-amber-950/40 border-amber-500/40 text-amber-300'
+          }`}>
+            <div className="flex items-center gap-2">
+              {isDiskSaved ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              ) : (
+                <HardDrive className="w-4 h-4 text-amber-400 shrink-0 animate-pulse" />
+              )}
+              <span className="font-medium">
+                {isDiskSaved
+                  ? 'Đã lưu vĩnh viễn vào tệp public/azero_intro.mp3 — Xuất web / ZIP sẽ luôn giữ giọng này!'
+                  : isSavingToDisk
+                  ? 'Đang đồng bộ file ghi âm vào thư mục mã nguồn public/...'
+                  : 'Bản ghi âm đang ở bộ nhớ tạm trình duyệt. Cần lưu vào mã nguồn để khi xuất web không bị mất!'}
+              </span>
+            </div>
+            {!isDiskSaved && (
+              <button
+                onClick={handleForceSaveToDisk}
+                disabled={isSavingToDisk}
+                className="px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 transition shadow cursor-pointer flex items-center gap-1.5"
+              >
+                <HardDrive className="w-3.5 h-3.5" />
+                <span>{isSavingToDisk ? 'Đang lưu...' : 'Lưu vào mã nguồn web'}</span>
+              </button>
+            )}
           </div>
         )}
 
